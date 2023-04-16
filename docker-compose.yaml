@@ -1,0 +1,89 @@
+version: "3.8"
+
+services:
+  mysqldb:
+    image: mysql:5.7
+    env_file: ./.env
+    command: --default-authentication-plugin=mysql_native_password
+    cap_add:
+      - SYS_NICE
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=$DATABASE_PASSWORD
+      - MYSQL_DATABASE=$DATABASE_DATABASE
+    networks:
+      - leemons-db
+    expose:
+      - 3306
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+    healthcheck:
+      test: mysqladmin ping -h 127.0.0.1 -uroot --password=$$MYSQL_ROOT_PASSWORD
+      timeout: 10s
+      retries: 10
+
+  mongo:
+    image: mongo:4.2.0
+    env_file: ./.env
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: $NOSQL_USERNAME
+      MONGO_INITDB_ROOT_PASSWORD: $NOSQL_PASSWORD
+    volumes:
+      - ./data:/data/db
+    networks:
+      - leemons-db
+    expose:
+      - 27017
+
+  redis:
+    image: redis:6.2.7
+    container_name: redis
+    restart: unless-stopped
+    command: "redis-server --notify-keyspace-events Ex"
+    expose:
+      - 6379
+    volumes:
+      - ./data/redis:/data
+    networks:
+      - leemons-db
+
+  frontend:
+    image: leemonade/leemons-front:dev
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    ports:
+      - 3000:3000
+    environment:
+      - API_URL=http://localhost:8080
+    networks:
+      - leemons-app
+
+  backend:
+    image: leemons-dev
+    env_file: ./.env
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    ports:
+      - 8080:8080
+    environment:
+      - DATABASE_HOST=mysqldb
+      - DATABASE_PORT=3306
+      - NOSQL_HOST=mongo
+      - NOSQL_PORT=27017
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    networks:
+      - leemons-app
+      - leemons-db
+    depends_on:
+      mongo:
+        condition: service_started
+      mysqldb:
+        condition: service_healthy
+
+networks:
+  leemons-app:
+  leemons-db:
